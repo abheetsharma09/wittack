@@ -1,0 +1,21 @@
+# PyInstaller
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller build artifacts
+build/
+*.manifest
+*.egg-info/
+
+# Output file from wittack itself
+output.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
