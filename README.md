@@ -1,217 +1,493 @@
-# WITTACK — Cross-Platform Wi-Fi Verification & Audit Tool
+![Wittack Banner](assets/banner.jpg)
 
-![Alt text](assets/banner.jpg)
-A localized, multi-platform command-line utility designed to audit Wi-Fi network credential resilience. The tool orchestrates native operating system networking stacks via subprocess pipelines to test password lists against designated SSIDs locally.
+# WITTACK — Wi-Fi Credential Audit Tool
 
----
-## ✨ Features
+> A cross-platform Python CLI utility that tests credential resilience against Wi-Fi networks using native OS tools (`netsh` / `nmcli` / `airport`) and optimized fast-polling loops.
 
-- **Network Discovery:** Scans nearby Wi-Fi networks and displays a cleanly numbered list.
-- **Wordlist Support:** Iterates through passwords from a custom text file (`.txt`).
-- **Speed Optimizations:**
-  - Skips passwords shorter than 8 characters (WPA2 baseline requirement).
-  - High-frequency connection polling every 0.2 seconds.
-  - Aborts polling early on definitive authentication failures.
-  - Defers profile deletions to minimize subprocess overhead.
-- **Cross-Platform:** Native support across Windows, macOS, and Linux using built-in system tools.
-- **Interactive UI:** Colored terminal output featuring a live progress counter.
-- **Automated Logging:** Saves recovered credentials directly to `output.txt`.
+[![Python](https://img.shields.io/badge/Python-3.6%2B-blue?style=flat-square&logo=python)](https://python.org)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/abheetsharma09/wittack)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 ---
 
-## 🛠️ Requirements
+## Table of Contents
 
-- **Python:** Version 3.6 or higher.
-- **Privileges:** Administrator or root access (required to modify OS network profiles).
-- **External Dependencies:** Only one external library for colored terminal interfaces:
-  ```bash
-  pip install colorama
+- [Quick Start](#quick-start)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Preparing Your Wordlist](#preparing-your-wordlist)
+- [Running Wittack](#running-wittack)
+  - [Windows (EXE)](#option-a--windows-exe-recommended)
+  - [Windows (Python)](#option-b--windows-python-script)
+  - [macOS](#macos)
+  - [Linux](#linux)
+- [Using the Tool — Step by Step](#using-the-tool--step-by-step)
+- [Understanding the Output](#understanding-the-output)
+- [Troubleshooting](#troubleshooting)
+- [How It Works Internally](#how-it-works-internally)
+- [Legal & Ethical Policy](#legal--ethical-policy)
 
-🏗️ Architecture & Flow Mechanics
----------------------------------
+---
 
-The application follows a structured, synchronous execution cycle managed through strict permission enforcement, platform discovery, and high-frequency state-checking loops.
+## Quick Start
 
 ```
-[Main Entry]
-    │
-    ▼
-[Enforce Admin Privileges] ───► (Windows: ctypes / Unix: os.execvp)
-    │
-    ▼
-[Scan Nearby Interfaces]  ───► (Filters netsh / nmcli / airport outputs)
-    │
-    ▼
-[Interactive Menu Selection]
-    │
-    ▼
-[Optimized Password Iteration Stream]
-    │
-    ├── (Skip strings < 8 chars)
-    └── [Subprocess Connection Handshake] ───► [Fast Polling Loop (0.2s)]
-            │
-            ├──► [True]  ──► Log to output.txt & Terminate
-            └──► [False] ──► Immediate Profile Cleanup
+# Windows — just double-click wittack.exe (run as Administrator)
+# OR from command line:
+wittack.exe
+
+# macOS / Linux — run with sudo
+sudo python3 main_script.py
 ```
 
-⚙️ Low-Level Module Breakdowns
-------------------------------
+---
 
-### 1\. Automated Privilege Elevation (`enforce_admin_privileges`)
+## Requirements
 
-Network profile modifications require advanced subsystem access across all operating systems. The script handles this seamlessly before initialization:
+| Requirement | Detail |
+|---|---|
+| **Python** | Version 3.6 or higher (not needed if using the `.exe`) |
+| **OS** | Windows 10/11 · macOS 10.14+ · Ubuntu/Debian/Arch Linux |
+| **Privileges** | Administrator (Windows) or root/sudo (macOS/Linux) |
+| **Wi-Fi** | Machine must have a working Wi-Fi adapter |
+| **Python dependency** | `colorama` — colored terminal output |
 
--   **Windows Subsystem:** Utilizes `ctypes.windll.shell32.IsUserAnAdmin()` to verify security tokens. If absent, it forces a User Account Control (UAC) prompt using `ShellExecuteW` with the `runas` parameter to relaunch the script within an elevated shell context.
+---
 
--   **POSIX Subsystems (Linux/Darwin):** Evaluates `os.geteuid()`. If the effective user ID is non-root, it explicitly leverages `os.execvp` to replace the current process image with a clean `sudo` execution thread.
+## Installation
 
-### 2\. Network Interface Discovery (`scan_wifi_networks`)
+### Option A — Windows EXE (No Python Required)
 
-The script directly interfaces with standard OS management binaries, parsing raw strings into manageable data structures:
+1. Go to the [Releases page](https://github.com/abheetsharma09/wittack/releases)
+2. Download `wittack.exe` from the latest release
+3. Place it in a folder of your choice — no installation needed
+4. Right-click the `.exe` → **Run as administrator**
 
--   **Windows Platform:** Parses stdout tables from `netsh wlan show networks`, isolating lines containing key strings while stripping structural colon delimiters.
+That is all. No Python, no pip, no setup.
 
--   **Linux Platform:** Leverages `nmcli` in terse mode (`-t`) filtering directly for the `SSID` property to prevent excessive string manipulation.
+---
 
--   **macOS Platform:** Invokes Apple's private wireless management framework binary (`airport -s`) and slices tabular column indices.
+### Option B — Python Script (All Platforms)
 
-### 3\. Native Handshake Orchestration (`connect_wifi`)
+**Step 1 — Clone or download the repo**
 
-Rather than relying on third-party network interface cards or heavy packet-injection drivers, the script manipulates native OS profile manager workflows:
+```bash
+git clone https://github.com/abheetsharma09/wittack.git
+cd wittack
+```
 
--   **XML Profile Overwriting (Windows):** Dynamically builds a standard `WLANProfile` configuration using XML schemas. SSIDs and passwords are automatically escaped via `xml.sax.saxutils.escape` to maintain valid document syntax. This payload is stored inside a `tempfile.NamedTemporaryFile` and applied immediately via `netsh wlan add profile`, completely mitigating the overhead of scanning and deleting pre-existing network configurations.
+Or click **Code → Download ZIP** on GitHub, then extract it.
 
--   **High-Frequency State Polling:** The Windows and macOS pipelines feature an aggressive `time.sleep(0.2)` polling gate restricted to 6 loops. This checks live system states continuously, enforcing an immediate break out of the thread if explicit failure messages (like `"authentication failed"`) are registered.
+**Step 2 — Install the one required dependency**
 
--   **Volatile Profile Cleanup:** To prevent the target machine's operating system from getting cluttered with stale network configurations, a cleanup routine automatically purges invalid connection definitions (`delete profile` / `removepreferredwirelessnetwork`) the moment a failure flag is verified.
+```bash
+pip install colorama
+```
 
-🚀 Performance Optimizations
-----------------------------
+If you are on Linux or macOS and `pip` points to Python 2:
 
--   **Heuristic Length Skipping:** Instantly ignores any passphrase token under 8 characters using Python string evaluation (`len(word) < 8`), bypassing expensive system shell executions for combinations that violate base WPA2 specification constraints.
+```bash
+pip3 install colorama
+```
 
--   **Buffered I/O Console Throttling:** Terminal screen rewrites via `sys.stdout.write` are buffered to trigger exclusively on every 1,000 combinations, preventing standard terminal I/O latency from slowing down core loop speeds.
+**Step 3 — Verify Python version**
 
--   **Implicit Memory Management:** Uses context managers (`with open()`) using `errors='ignore'` parameters to handle unexpected malformed encoding errors seamlessly across large wordlists without interrupting loop integrity.
+```bash
+python --version
+# Must be 3.6 or higher
+# On macOS/Linux use: python3 --version
+```
 
-💻 How to Use
--------------
+---
 
-### Step 1: Prepare a password file
+## Preparing Your Wordlist
 
-Create a plain text file (e.g., `passwords.txt`) containing one password candidate per line.
+Wittack reads passwords from a plain text file — one password per line.
 
-Plaintext
+**Example `passwords.txt`:**
 
 ```
 12345678
 password123
-mysecretkey
-
+mysecretnetwork
+qwerty123
+letmein99
+hunter2wifi
 ```
 
-*Note: The tool automatically skips any entry under 8 characters to save execution cycles.*
+**Rules the script enforces automatically:**
 
-### Step 2: Run the script with elevated privileges
+- Any password **under 8 characters is silently skipped** — this is the WPA2 minimum requirement. Including them wastes time.
+- Blank lines are ignored.
+- Malformed or non-UTF-8 characters in the file are ignored without crashing.
+
+**Where to get wordlists:**
+
+- `rockyou.txt` — the most commonly used wordlist for Wi-Fi auditing. Available on [GitHub](https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt) and pre-installed on Kali Linux at `/usr/share/wordlists/rockyou.txt`
+- Build your own — if you are auditing your own network, include variations of your own password to verify it holds up
+
+**Pro tip:** A smaller, targeted wordlist (100–1000 entries) is far more practical than a 10 million entry file. The speed of each attempt is governed by your hardware's Wi-Fi handshake time, not the script.
+
+---
+
+## Running Wittack
+
+### Option A — Windows EXE (Recommended)
+
+**Step 1** — Open File Explorer and navigate to where you saved `wittack.exe`
+
+**Step 2** — Right-click `wittack.exe` → click **"Run as administrator"**
+
+> You must run as administrator. The script needs to create and modify Wi-Fi network profiles in the Windows network stack. Without admin rights it will fail immediately.
+
+**Step 3** — A UAC (User Account Control) prompt will appear. Click **Yes**.
+
+The terminal window opens automatically and the tool starts scanning for nearby networks.
+
+---
+
+### Option B — Windows Python Script
+
+**Step 1** — Open the Start Menu → search for **Command Prompt** → right-click it → **Run as administrator**
+
+**Step 2** — Navigate to the wittack folder:
+
+```cmd
+cd C:\Users\YourName\Downloads\wittack
+```
+
+**Step 3** — Run the script:
+
+```cmd
+python main_script.py
+```
+
+If Windows asks for a UAC prompt, click Yes.
+
+---
+
+### macOS
+
+**Step 1** — Open **Terminal** (Applications → Utilities → Terminal)
+
+**Step 2** — Navigate to the wittack folder:
+
+```bash
+cd ~/Downloads/wittack
+```
+
+**Step 3** — Run with sudo:
+
+```bash
+sudo python3 main_script.py
+```
+
+**Step 4** — Enter your Mac login password when prompted. The script does not display characters as you type — this is normal.
+
+> **Note for macOS 12+:** Apple restricts use of the `airport` utility on newer macOS versions. If network scanning returns no results, see the [Troubleshooting](#troubleshooting) section.
+
+---
+
+### Linux
+
+**Step 1** — Open a terminal
+
+**Step 2** — Make sure NetworkManager is installed:
+
+```bash
+# Debian / Ubuntu
+sudo apt install network-manager
+
+# Arch
+sudo pacman -S networkmanager
+
+# Fedora
+sudo dnf install NetworkManager
+```
+
+**Step 3** — Navigate to the wittack folder:
+
+```bash
+cd ~/Downloads/wittack
+```
+
+**Step 4** — Run with sudo:
+
+```bash
+sudo python3 main_script.py
+```
+
+---
+
+## Using the Tool — Step by Step
+
+Once the script is running, here is exactly what happens and what you need to type at each prompt.
+
+---
+
+**Step 1 — The banner prints**
+
+```
+        .__  __    __                 __    
+__  _  _|__|/  |__/  |______    ____ |  | __
+\ \/ \/ /  \   __\   __\__  \ _/ ___\|  |/ /
+ \     /|  ||  |  |  |  / __ \\  \___|    < 
+  \/\_/ |__||__|  |__| /____  /\___  >__|_ \
+                            \/     \/     \/
+```
+
+This confirms the script launched successfully with proper permissions.
+
+---
+
+**Step 2 — Network scan runs automatically**
+
+```
+Scanning for nearby Wi-Fi networks...
+------------------------------
+Found 4 network(s):
+
+[0] HomeWiFi_5G
+[1] NeighbourBT
+[2] OfficeGuest
+[3] AndroidHotspot
+------------------------------
+```
+
+The tool calls `netsh` / `nmcli` / `airport` automatically depending on your OS and lists every visible SSID with an index number.
+
+---
+
+**Step 3 — Choose your target network**
+
+```
+Choose SSID to Launch Attack :
+```
+
+Type the **number** in the square brackets next to the network you want to test. For example, to test `HomeWiFi_5G` you would type:
+
+```
+0
+```
+
+Then press **Enter**.
+
+> Only type the number. Do not type the SSID name. If you enter a number outside the range shown, the tool will print an error and exit — just run it again.
+
+---
+
+**Step 4 — Provide the wordlist path**
+
+```
+Enter the Password File Path (.txt) :
+```
+
+Type the full path to your password file. Examples:
 
 **Windows:**
-
-1.  Open **Command Prompt** as Administrator (Right-click -> *Run as administrator*).
-
-2.  Navigate to the script's directory.
-
-3.  Execute:
-
-    DOS
-
-    ```
-    python wifi_tool.py
-
-    ```
+```
+C:\Users\YourName\Desktop\passwords.txt
+```
 
 **macOS / Linux:**
+```
+/home/yourname/passwords.txt
+```
 
-1.  Open a terminal instance.
+Or if the file is in the same folder as the script, just type the filename:
+```
+passwords.txt
+```
 
-2.  Execute with `sudo`:
+Then press **Enter**.
 
-    Bash
+> If the file path is wrong or the file does not exist, the tool prints `File does not exist.` and exits. Check the path and run again.
 
-    ```
-    sudo python3 wifi_tool.py
+---
 
-    ```
+**Step 5 — The attack loop starts**
 
-### Step 3: Follow the interactive menu
+```
+Started attacking on HomeWiFi_5G...
+Combinations Attempted: 1,000
+```
 
-1.  The script discovers visible interfaces and prints them dynamically:
+The counter updates every 1,000 attempts. This is intentional — printing every single attempt would slow the loop significantly. Let it run. Speed depends entirely on your Wi-Fi hardware's connection handshake time, not the script.
 
-    Plaintext
+Do not close the terminal. Do not put the machine to sleep.
 
-    ```
-    Found 3 network(s):
-    [0] MyHomeWiFi
-    [1] GuestNetwork
-    [2] OfficeWiFi
+---
 
-    ```
+**Step 6A — Password found**
 
-2.  Enter the index number corresponding to the target SSID (e.g., `0`).
+If a password in your wordlist matches:
 
-3.  Provide the file path to your target wordlist (e.g., `./passwords.txt`).
+```
+--------------------
+PASSWORD FOUND : correctpassword123
+--------------------
+Saved the Details in 'output.txt'
 
-4.  The loop starts executing, printing real-time iteration metrics:
+PRESS ENTER TO EXIT
+```
 
-    Plaintext
+The matched credential is saved to `output.txt` in the same folder as the script, formatted as:
 
-    ```
-    Combinations Attempted: 1,000
+```
+HomeWiFi_5G : correctpassword123
+```
 
-    ```
+Press **Enter** to exit cleanly.
 
-### Step 4: Password Recovery
+---
 
--   Upon a successful handshake, the correct credential is highlighted in green.
+**Step 6B — Wordlist exhausted**
 
--   The entry is logged directly into `output.txt` within the execution directory.
+If the entire wordlist is tried without a match, the script finishes silently and exits. No match means the password was not in your list — not that the tool failed. Try a different or larger wordlist.
 
--   Press **Enter** to cleanly terminate the script.
+---
 
-🔍 Troubleshooting
-------------------
+## Understanding the Output
 
--   **Issue:** `"Failed to add profile"` on Windows
+| What you see | What it means |
+|---|---|
+| `Scanning for nearby Wi-Fi networks...` | OS network scan is running |
+| `Found N network(s)` | Scan completed, N SSIDs discovered |
+| `Started attacking on [SSID]...` | Loop has begun, reading your wordlist |
+| `Combinations Attempted: X,000` | Counter — updates every 1,000 attempts |
+| `PASSWORD FOUND : xxxx` | Match confirmed — credential written to `output.txt` |
+| `File does not exist.` | The wordlist path you typed is wrong |
+| `ERROR!!...Please choose from the given input!!` | You entered a number outside the network list range |
+| No output after a long time | The script is working — large wordlists take time |
 
-    -   **Solution:** Close the console, right-click your command prompt application, and select *Run as Administrator*.
+---
 
--   **Issue:** No networks discovered
+## Troubleshooting
 
-    -   **Solution:** Verify the host machine's Wi-Fi interface is enabled and not locked in Airplane mode.
+**"Failed to add profile" on Windows**
 
--   **Issue:** `"nmcli not found"` on Linux systems
+You are not running as Administrator. Close the terminal, right-click Command Prompt or the `.exe`, and select *Run as administrator*.
 
-    -   **Solution:** Install the missing package via your native package manager (e.g., `sudo apt install network-manager`).
+---
 
--   **Issue:** Script performance feels sluggish
+**"No networks found" on any platform**
 
-    -   **Solution:** Operational speed is governed by hardware handshake limits. Filter down your wordlist size to more likely targets.
+- Make sure your Wi-Fi adapter is turned on (not in Airplane mode)
+- On Linux, confirm NetworkManager is running: `sudo systemctl start NetworkManager`
+- On macOS 12+, the `airport` utility may be deprecated — run `sudo /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -s` manually to test if it works on your machine
 
--   **Issue:** Known valid password fails to register
+---
 
-    -   **Solution:** Extend the timeout bounds. Inside the `connect_windows()` function block, change the loop evaluation boundary from `range(6)` to `range(10)`.
+**"nmcli not found" on Linux**
 
--   **Issue:** ANSI escape sequences break terminal layout on Windows
+```bash
+sudo apt install network-manager   # Ubuntu/Debian
+sudo pacman -S networkmanager       # Arch
+```
 
-    -   **Solution:** Run the script within modern terminal environments (like Windows Terminal) or confirm `colorama.init()` initializes on start.
+---
 
-⚖️ Legal & Ethical Policy
--------------------------
+**The counter is moving very slowly**
 
-This utility is architected exclusively for authorized infrastructure security auditing, local credential recovery, and educational systems research. Unauthorized targeting of networks without prior written owner validation is structurally unlawful and violates regional telecommunications access policies. For details on industry compliance standards and standard network auditing guidelines, consult official security framework practices online. The development maintainers accept no liability for operational misapplication.
+This is normal. Each attempt requires a full OS-level WPA2 handshake cycle — typically 0.2–1.5 seconds per attempt depending on your hardware. A 1,000-entry wordlist can take anywhere from 3 minutes to 25 minutes. This is a hardware limitation, not a bug.
 
-📄 License
-----------
+To speed things up: use a smaller, more targeted wordlist.
 
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE)---feel free to fork, modify, and distribute for all legitimate security auditing workflows.
+---
 
-**Happy (ethical) testing!**
+**Known valid password doesn't register as correct**
+
+The connection polling window may be too short for your hardware. Open `main_script.py` and find the line:
+
+```python
+for _ in range(6):
+```
+
+Change `6` to `10` or `12` to give the connection more time to confirm:
+
+```python
+for _ in range(10):
+```
+
+---
+
+**ANSI colour codes showing as garbled characters on Windows**
+
+Run the script in **Windows Terminal** (not the legacy CMD window). Or confirm `colorama.init()` is being called — it is in the script by default.
+
+---
+
+**"Permission denied" on macOS or Linux**
+
+You forgot `sudo`. The script must be run as root on POSIX systems:
+
+```bash
+sudo python3 main_script.py
+```
+
+---
+
+**Script exits immediately after the UAC prompt on Windows**
+
+This is expected behaviour. When the script detects it is not running as admin, it relaunches itself with elevated permissions via `ShellExecuteW runas` and exits the original process. The new elevated window is the one to use.
+
+---
+
+## How It Works Internally
+
+The script follows this execution order every time:
+
+```
+Launch
+  │
+  ▼
+Enforce admin/root privileges
+  │  Windows: ctypes.windll.shell32.IsUserAnAdmin()
+  │  POSIX:   os.geteuid() → re-exec with os.execvp sudo
+  ▼
+Scan nearby Wi-Fi networks
+  │  Windows: netsh wlan show networks
+  │  Linux:   nmcli -t -f SSID dev wifi list
+  │  macOS:   airport -s
+  ▼
+User selects target SSID and provides wordlist path
+  ▼
+Password iteration loop
+  │  Skip any password under 8 characters (WPA2 minimum)
+  │  Counter printed every 1,000 attempts
+  ▼
+For each password — attempt connection
+  │  Windows: Build WLANProfile XML → netsh wlan add profile
+  │            → netsh wlan connect → poll 0.2s × 6 = 1.2s max
+  │            → delete profile on failure
+  │  macOS:   networksetup -setairportnetwork → poll → cleanup
+  │  Linux:   nmcli dev wifi connect → verify with nmcli con show
+  ▼
+On success → write SSID:password to output.txt → exit
+On failure → continue to next password in wordlist
+```
+
+---
+
+## Legal & Ethical Policy
+
+This utility is built **exclusively** for:
+
+- Auditing Wi-Fi networks you own
+- Recovering credentials for your own access points
+- Authorized penetration testing engagements with written permission
+- Educational research in controlled environments
+
+**Unauthorized use against networks you do not own or do not have explicit written permission to test is illegal** under computer fraud and telecommunications laws in virtually every jurisdiction — including India's IT Act 2000, the US Computer Fraud and Abuse Act, and the UK Computer Misuse Act.
+
+The maintainers accept no liability for misuse.
+
+---
+
+## License
+
+MIT License — free to use, fork, and modify for all legitimate security auditing workflows. See [LICENSE](LICENSE) for the full text.
+
+---
+
+*Built by [abheetsharma09](https://github.com/abheetsharma09)*
