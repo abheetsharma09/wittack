@@ -26,6 +26,7 @@
 - [Troubleshooting](#troubleshooting)
 - [How It Works Internally](#how-it-works-internally)
 - [Legal & Ethical Policy](#legal--ethical-policy)
+- [Wittack Basic GUI(Tkinter)](#wittack-guitkinter)
 
 ---
 
@@ -468,6 +469,11 @@ On failure → continue to next password in wordlist
 ```
 
 ---
+
+## Wittack GUI(Tkinter)
+
+- Quick and Simple GUI using Tkinter
+![GUI Banner](assets/gui_banner.png)
 
 ## Legal & Ethical Policy
 
